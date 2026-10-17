@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Гардероб
 
-## Getting Started
+Личное приложение для одного гардероба: вещи с автоматически вырезанным фоном и тегами,
+конструктор образов, примерка на своём фото (свайп верх / низ / обувь), дневник носки,
+анализ «чего не хватает» и капсула на поездку под погоду.
 
-First, run the development server:
+Мобильный веб (PWA): открывается в браузере телефона, добавляется на главный экран.
+
+## Как устроено
+
+- **Next.js 16** (App Router) — на Vercel.
+- **Supabase** — Postgres + Storage (приватный бакет `wardrobe`). Приложение ходит в базу
+  только с сервера по `service_role` ключу; картинки отдаются через `/api/img/...`.
+- **Вырезание фона** — прямо в браузере (`@imgly/background-removal`, модель ~40 МБ
+  скачивается один раз и кэшируется). Сервер не нужен. Массовую загрузку удобнее делать
+  с ноутбука — там быстрее.
+- **Автотеги, советы, капсула** — Claude API (`ANTHROPIC_API_KEY`). Без ключа всё работает,
+  но теги заполняются руками, а капсула собирается по правилам.
+- **Погода** — Open-Meteo, без ключа.
+- **Вход** — один общий пароль (`APP_PASSWORD`), сессия на год.
+
+## Запуск с нуля
+
+1. Supabase → новый проект → SQL Editor → выполнить `supabase/schema.sql` один раз.
+2. Переменные окружения (см. `.env.example`):
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+   - `APP_PASSWORD` — пароль входа; `APP_SECRET` — любая длинная случайная строка
+   - `ANTHROPIC_API_KEY` — необязательно, но без него нет автотегов и советов
+3. Деплой на Vercel из этого репозитория (Framework: Next.js, корень репозитория).
+
+## Локально
 
 ```bash
+npm install
+cp .env.example .env.local   # заполнить
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Без Supabase можно потыкать на заглушке (данные в памяти, теряются при перезапуске):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+node scripts/mock-supabase.mjs
+SUPABASE_URL=http://localhost:54321 SUPABASE_SERVICE_ROLE_KEY=mock npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Структура
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/app/(app)/wardrobe` — вещи: сетка, фильтры, карточка, добавление
+- `src/app/(app)/tryon` — примерка; `src/components/TryOn.tsx`
+- `src/app/(app)/builder` — конструктор-коллаж и сохранённые образы
+- `src/app/(app)/insights` — покрытие, «чего не хватает», носка
+- `src/app/(app)/trips` — капсулы на поездку
+- `src/lib/anthropic.ts` — все вызовы модели (теги, советы, капсула)
+- `src/lib/analysis.ts`, `src/lib/capsule.ts` — правила без ИИ
+- `supabase/schema.sql` — схема базы
