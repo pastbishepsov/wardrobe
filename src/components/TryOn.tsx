@@ -139,6 +139,8 @@ export default function TryOn({ profile, items, placements: initialPlacements }:
   const [season, setSeason] = useState<Season | "all">("all");
   const [bucket, setBucket] = useState<string | "all">("all");
   const [index, setIndex] = useState<Record<Zone, number>>({ top: 0, bottom: 0, shoes: 0 });
+  // Locked zones keep their item when "Случайно" shuffles the rest.
+  const [locked, setLocked] = useState<Record<Zone, boolean>>({ top: false, bottom: false, shoes: false });
   const [placements, setPlacements] = useState<Map<string, Placement>>(() => new Map(initialPlacements.map((p) => [p.item_id, p])));
   const [adjustZone, setAdjustZone] = useState<Zone>("top");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -170,11 +172,22 @@ export default function TryOn({ profile, items, placements: initialPlacements }:
   }
 
   function shuffle() {
-    setIndex({
-      top: lists.top.length ? Math.floor(Math.random() * lists.top.length) : 0,
-      bottom: lists.bottom.length ? Math.floor(Math.random() * lists.bottom.length) : 0,
-      shoes: lists.shoes.length ? Math.floor(Math.random() * lists.shoes.length) : 0,
+    setIndex((prev) => {
+      const next = { ...prev };
+      for (const z of ZONES) {
+        const n = lists[z.value].length;
+        if (locked[z.value] || n < 2) continue;
+        // pick something different from what is shown now
+        let pick = Math.floor(Math.random() * n);
+        if (pick === Math.min(prev[z.value], n - 1)) pick = (pick + 1) % n;
+        next[z.value] = pick;
+      }
+      return next;
     });
+  }
+
+  function toggleLock(z: Zone) {
+    setLocked((prev) => ({ ...prev, [z]: !prev[z] }));
   }
 
   function placementOf(id: string): Placement {
@@ -321,6 +334,8 @@ export default function TryOn({ profile, items, placements: initialPlacements }:
                   position={safeIndex(z.value) + 1}
                   adjusting={adjusting}
                   dimmed={mode === "adjust" && !adjusting}
+                  locked={locked[z.value]}
+                  onToggleLock={() => toggleLock(z.value)}
                   stage={stageRef}
                   onStep={(dir) => step(z.value, dir)}
                   onTap={() => {
@@ -368,7 +383,7 @@ export default function TryOn({ profile, items, placements: initialPlacements }:
           <p className="text-sm font-semibold">
             Подгонка: {ZONES.find((z) => z.value === adjustZone)?.label.toLowerCase()} — {current(adjustZone)?.name ?? "нет вещи"}
           </p>
-          <p className="mt-1 text-xs text-ink-soft">Двигай вещь пальцем, двумя пальцами меняй размер. Тапни по другой зоне, чтобы подогнать её. Положение запоминается для этой вещи.</p>
+          <p className="mt-1 text-xs text-ink-soft">Двигай вещь пальцем, двумя пальцами меняй размер и поворачивай. Тапни по другой зоне, чтобы подогнать её. Положение запоминается для этой вещи.</p>
           <div className="mt-3 flex gap-2">
             <button className="btn btn-ghost" onClick={resetPlacement}>
               Сбросить
@@ -485,6 +500,8 @@ function ZoneLayer({
   position,
   adjusting,
   dimmed,
+  locked,
+  onToggleLock,
   stage,
   onStep,
   onTap,
@@ -499,6 +516,8 @@ function ZoneLayer({
   position: number;
   adjusting: boolean;
   dimmed: boolean;
+  locked: boolean;
+  onToggleLock: () => void;
   stage: React.RefObject<HTMLDivElement | null>;
   onStep: (dir: -1 | 1) => void;
   onTap: () => void;
@@ -515,9 +534,10 @@ function ZoneLayer({
         }
       : undefined,
     onPinch: adjusting
-      ? (ratio) => {
+      ? (ratio, angleDelta) => {
           if (!placement) return;
-          onAdjust({ scale: clamp(placement.scale * ratio, 0.3, 3) });
+          const rotation = (((placement.rotation + angleDelta + 180) % 360) + 360) % 360 - 180;
+          onAdjust({ scale: clamp(placement.scale * ratio, 0.3, 3), rotation });
         }
       : undefined,
   });
@@ -543,7 +563,7 @@ function ZoneLayer({
           draggable={false}
           className="pointer-events-none h-full w-full object-contain drop-shadow-[0_6px_14px_rgba(0,0,0,0.18)]"
           style={{
-            transform: `translate(${placement.dx * 100}%, ${placement.dy * 100}%) scale(${placement.scale})`,
+            transform: `translate(${placement.dx * 100}%, ${placement.dy * 100}%) scale(${placement.scale}) rotate(${placement.rotation}deg)`,
             transformOrigin: "center",
           }}
         />
@@ -573,6 +593,18 @@ function ZoneLayer({
           <span className="absolute -bottom-1 right-1 rounded-full bg-elev/90 px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft">
             {position}/{count}
           </span>
+          <button
+            aria-label={locked ? "Открепить" : "Закрепить"}
+            aria-pressed={locked}
+            className={`absolute -top-1 right-1 flex h-7 w-7 items-center justify-center rounded-full shadow ${locked ? "bg-accent text-accent-ink" : "bg-elev/90 text-ink-soft"}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onToggleLock}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+              {locked ? <path d="M8 11V7a4 4 0 0 1 8 0v4" /> : <path d="M8 11V7a4 4 0 0 1 7.5-1.8" />}
+            </svg>
+          </button>
         </>
       )}
     </div>
