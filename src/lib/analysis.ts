@@ -25,7 +25,8 @@ export function buildMatrix(items: Item[]): CoverageMatrix {
         const matching = items.filter(
           (i) =>
             i.category === category &&
-            i.seasons.includes(season.value) &&
+            // no seasons chosen = fits any season (same rule as the capsule)
+            (i.seasons.length === 0 || i.seasons.includes(season.value)) &&
             bucket.values.includes(i.formality)
         );
         cells.push({

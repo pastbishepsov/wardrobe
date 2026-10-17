@@ -57,9 +57,9 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
-      <button aria-label="Закрыть" className="absolute inset-0 bg-ink/40" onClick={onClose} />
+      <button aria-label="Закрыть" className="absolute inset-0 touch-none bg-ink/40" onClick={onClose} />
       <div
-        className="relative w-full max-w-lg rounded-t-[24px] bg-elev px-4 pt-3 shadow-2xl fade-up max-h-[88vh] overflow-y-auto"
+        className="relative w-full max-w-lg rounded-t-[24px] bg-elev px-4 pt-3 shadow-2xl fade-up max-h-[88dvh] overflow-y-auto overscroll-contain"
         style={{ paddingBottom: "calc(16px + var(--safe-bottom))" }}
       >
         <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line" />

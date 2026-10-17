@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import TripView from "@/components/TripView";
 import { BackLink } from "@/components/ui";
+import { isUuid } from "@/lib/api";
 import { getTrip, listItems } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function TripPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const [trip, items] = await Promise.all([getTrip(id), listItems()]);
   if (!trip) notFound();
   return (

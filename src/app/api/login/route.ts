@@ -5,6 +5,8 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { password?: string };
   const password = body.password ?? "";
   if (!passwordMatches(password)) {
+    // Slow down guessing of the single shared password.
+    await new Promise((r) => setTimeout(r, 1500));
     return NextResponse.json({ error: "Неверный пароль" }, { status: 401 });
   }
   const res = NextResponse.json({ ok: true });

@@ -9,6 +9,7 @@ import { api, useToast } from "@/lib/hooks";
 import { blobToBase64, removeBg, resizeImage, trimTransparent } from "@/lib/image-client";
 import type { ItemTags } from "@/lib/anthropic";
 import { plural } from "@/lib/taxonomy";
+import { putToSignedUrl, requestUploadTarget } from "@/lib/upload-client";
 
 type Status = "pending" | "processing" | "ready" | "saving" | "saved" | "skipped" | "failed";
 
@@ -26,7 +27,16 @@ interface Entry {
   height?: number;
   meta: ItemMeta;
   aiTagged: boolean;
+  /** processing / tagging problem */
   error?: string;
+  /** last failed save attempt */
+  saveError?: string;
+}
+
+/** Blob URLs pin their blobs in memory until revoked — matters when adding dozens of photos in a row. */
+function revokeUrls(e: Entry) {
+  if (e.originalUrl) URL.revokeObjectURL(e.originalUrl);
+  if (e.cutoutUrl) URL.revokeObjectURL(e.cutoutUrl);
 }
 
 function tagsToMeta(t: ItemTags): ItemMeta {
@@ -58,6 +68,24 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
   const patch = useCallback((id: string, p: Partial<Entry> | ((e: Entry) => Partial<Entry>)) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...(typeof p === "function" ? p(e) : p) } : e)));
   }, []);
+
+  /** Mark an entry as finished (saved/skipped) and free its blob URLs. */
+  const finish = useCallback((id: string, status: "saved" | "skipped") => {
+    setEntries((prev) =>
+      prev.map((e) => {
+        if (e.id !== id) return e;
+        revokeUrls(e);
+        return { ...e, status, originalUrl: undefined, cutoutUrl: undefined, originalBlob: undefined, cutoutBlob: undefined };
+      })
+    );
+  }, []);
+
+  function reset() {
+    setEntries((prev) => {
+      prev.forEach(revokeUrls);
+      return [];
+    });
+  }
 
   function addFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -139,37 +167,50 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
       showToast("Дай вещи название");
       return;
     }
-    patch(entry.id, { status: "saving" });
+    patch(entry.id, { status: "saving", saveError: undefined });
     try {
-      const form = new FormData();
-      form.append("image", entry.cutoutBlob, "item.png");
-      if (entry.originalBlob) form.append("original", entry.originalBlob, "original.jpg");
-      form.append(
-        "meta",
-        JSON.stringify({
-          ...entry.meta,
-          subcategory: entry.meta.subcategory || null,
-          material: entry.meta.material || null,
-          brand: entry.meta.brand || null,
-          notes: entry.meta.notes || null,
-          width: entry.width ?? null,
-          height: entry.height ?? null,
-        })
-      );
-      await api("/api/items", { method: "POST", body: form });
-      patch(entry.id, { status: "saved" });
+      // Files go straight to Storage (signed URLs); our API only receives the metadata.
+      const target = await requestUploadTarget(Boolean(entry.originalBlob));
+      await putToSignedUrl(target.image.signedUrl, entry.cutoutBlob, "image/png");
+      if (entry.originalBlob && target.original) await putToSignedUrl(target.original.signedUrl, entry.originalBlob, "image/jpeg");
+      await api("/api/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: target.id,
+          image_path: target.image.path,
+          original_path: entry.originalBlob && target.original ? target.original.path : null,
+          meta: {
+            ...entry.meta,
+            subcategory: entry.meta.subcategory || null,
+            material: entry.meta.material || null,
+            brand: entry.meta.brand || null,
+            notes: entry.meta.notes || null,
+            width: entry.width ?? null,
+            height: entry.height ?? null,
+          },
+        }),
+      });
+      finish(entry.id, "saved");
       showToast("Сохранено");
       router.refresh();
     } catch (err) {
-      patch(entry.id, { status: "ready", error: err instanceof Error ? err.message : "Не сохранилось" });
+      const message = err instanceof Error ? err.message : "Не сохранилось";
+      patch(entry.id, { status: "ready", saveError: message });
+      showToast(message);
     }
   }
 
   async function saveWithoutCutout(entry: Entry) {
     // Fallback when background removal is not available on this device.
     if (!entry.originalBlob) return;
-    const png = await resizeImage(entry.originalBlob, 1400, "image/png");
-    patch(entry.id, { cutoutBlob: png.blob, cutoutUrl: URL.createObjectURL(png.blob), width: png.width, height: png.height, status: "ready", error: undefined });
+    try {
+      const png = await resizeImage(entry.originalBlob, 1400, "image/png");
+      if (entry.cutoutUrl) URL.revokeObjectURL(entry.cutoutUrl);
+      patch(entry.id, { cutoutBlob: png.blob, cutoutUrl: URL.createObjectURL(png.blob), width: png.width, height: png.height, status: "ready", error: undefined });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Не удалось подготовить фото");
+    }
   }
 
   if (!entries.length) {
@@ -191,8 +232,8 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
           </div>
           <p className="mt-3 text-xs text-ink-soft">Из галереи можно выбрать сразу несколько фото — они обработаются по очереди.</p>
         </div>
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => addFiles(e.target.files)} />
-        <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+        <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
       </div>
     );
   }
@@ -206,7 +247,7 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
           {entries.some((e) => e.status === "skipped") ? ", часть пропущена" : ""}.
         </p>
         <div className="mt-4 flex justify-center gap-2">
-          <button className="btn btn-ghost" onClick={() => setEntries([])}>
+          <button className="btn btn-ghost" onClick={reset}>
             Добавить ещё
           </button>
           <Link href="/wardrobe" className="btn btn-primary">
@@ -251,13 +292,14 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
           ) : null}
           {current.status === "failed" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-elev/85 p-6 text-center">
-              <p className="text-sm font-semibold text-danger">Не удалось вырезать фон</p>
+              <p className="text-sm font-semibold text-danger">{current.originalBlob ? "Не удалось вырезать фон" : "Не удалось открыть фото"}</p>
               <p className="text-xs text-ink-soft">{current.error}</p>
+              {!current.originalBlob && <p className="text-xs text-ink-soft">Похоже, формат не поддерживается — попробуй сохранить фото как JPEG.</p>}
               <div className="flex gap-2">
-                <button className="btn btn-ghost" onClick={() => patch(current.id, { status: "skipped" })}>
+                <button className="btn btn-ghost" onClick={() => finish(current.id, "skipped")}>
                   Пропустить
                 </button>
-                <button className="btn btn-primary" onClick={() => saveWithoutCutout(current)}>
+                <button className="btn btn-primary" onClick={() => saveWithoutCutout(current)} disabled={!current.originalBlob}>
                   Сохранить как есть
                 </button>
               </div>
@@ -278,6 +320,9 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
 
       {(current.status === "ready" || current.status === "saving") && (
         <>
+          {current.saveError && (
+            <p className="rounded-2xl bg-danger/10 px-3 py-2 text-xs font-semibold text-danger">Не сохранилось: {current.saveError}. Попробуй ещё раз.</p>
+          )}
           {current.aiTagged ? (
             <p className="rounded-2xl bg-accent-soft px-3 py-2 text-xs text-accent">Теги подобраны автоматически — проверь и поправь, если что-то не так.</p>
           ) : current.error ? (
@@ -285,7 +330,7 @@ export default function AddItemFlow({ aiEnabled }: { aiEnabled: boolean }) {
           ) : null}
           <TagForm value={current.meta} onChange={(meta) => patch(current.id, { meta })} />
           <div className="sticky bottom-20 z-10 flex gap-2 rounded-full bg-bg/90 p-1 backdrop-blur">
-            <button className="btn btn-ghost" onClick={() => patch(current.id, { status: "skipped" })} disabled={current.status === "saving"}>
+            <button className="btn btn-ghost" onClick={() => finish(current.id, "skipped")} disabled={current.status === "saving"}>
               Пропустить
             </button>
             <button className="btn btn-primary flex-1" onClick={() => save(current)} disabled={current.status === "saving"}>

@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import ItemEditor from "@/components/ItemEditor";
 import { BackLink } from "@/components/ui";
+import { isUuid } from "@/lib/api";
 import { getItem, listWears } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function ItemPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const [item, wears] = await Promise.all([getItem(id), listWears()]);
   if (!item) notFound();
   const mine = wears.filter((w) => w.item_ids.includes(item.id));

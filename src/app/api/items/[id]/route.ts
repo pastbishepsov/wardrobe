@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { fail, ok } from "@/lib/api";
-import { deleteItem, getItem, updateItem } from "@/lib/data";
+import { fail, isUuid, ok } from "@/lib/api";
+import { deleteItem, getItem, removeItemReferences, updateItem } from "@/lib/data";
 import { removeFromBucket } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  if (!isUuid(id)) return fail(new Error("Не найдено"), 404);
   try {
     const item = await getItem(id);
     if (!item) return fail(new Error("Вещь не найдена"), 404);
@@ -38,6 +39,7 @@ export async function GET(_req: Request, ctx: Ctx) {
 
 export async function PATCH(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  if (!isUuid(id)) return fail(new Error("Не найдено"), 404);
   const parsed = PatchSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return fail(new Error("Неверные данные: " + parsed.error.issues[0]?.message), 400);
   try {
@@ -49,9 +51,11 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
 export async function DELETE(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  if (!isUuid(id)) return fail(new Error("Не найдено"), 404);
   try {
     const item = await getItem(id);
     if (!item) return ok({ ok: true });
+    await removeItemReferences(id).catch((e) => console.error("[items] cleanup", e));
     await deleteItem(id);
     await removeFromBucket([item.image_path, ...(item.original_path ? [item.original_path] : [])]).catch(() => {});
     return ok({ ok: true });

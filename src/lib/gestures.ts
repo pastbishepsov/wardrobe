@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useLayoutEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 
 export interface GestureHandlers {
   /** incremental move in px (single pointer) */
@@ -29,7 +29,8 @@ export function useGestures(h: GestureHandlers) {
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const moved = useRef(0);
   const handlers = useRef(h);
-  useEffect(() => {
+  // Layout effect: handlers see the committed props before the next pointer event can fire.
+  useLayoutEffect(() => {
     handlers.current = h;
   });
 

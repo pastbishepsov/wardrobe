@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fail, ok } from "@/lib/api";
+import { fail, isUuid, ok } from "@/lib/api";
 import { deleteOutfit, getOutfit, updateOutfit } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ const Patch = z
 
 export async function PATCH(request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  if (!isUuid(id)) return fail(new Error("Не найдено"), 404);
   const parsed = Patch.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return fail(new Error("Неверные данные"), 400);
   try {
@@ -28,6 +29,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
 export async function DELETE(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  if (!isUuid(id)) return fail(new Error("Не найдено"), 404);
   try {
     await deleteOutfit(id);
     return ok({ ok: true });

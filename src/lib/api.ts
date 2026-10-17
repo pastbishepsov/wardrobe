@@ -13,3 +13,10 @@ export function fail(error: unknown, status = 500) {
 export function newId(): string {
   return crypto.randomUUID();
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Route params are user input: a non-uuid would make Postgres throw a 500 instead of a clean 404. */
+export function isUuid(value: string | undefined | null): value is string {
+  return typeof value === "string" && UUID_RE.test(value);
+}

@@ -6,7 +6,13 @@ const PUBLIC_PATHS = ["/login", "/api/login", "/manifest.webmanifest", "/sw.js"]
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (!authEnabled()) return NextResponse.next();
+  if (!authEnabled()) {
+    // Never fail open in production: without a password the whole wardrobe would be public.
+    if (process.env.NODE_ENV === "production") {
+      return new NextResponse("APP_PASSWORD не задан — приложение закрыто", { status: 503 });
+    }
+    return NextResponse.next();
+  }
   if (PUBLIC_PATHS.some((p) => pathname === p) || pathname.startsWith("/icons/")) {
     return NextResponse.next();
   }

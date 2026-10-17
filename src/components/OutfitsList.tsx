@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import OutfitThumb from "@/components/OutfitThumb";
 import { EmptyState, Sheet, Spinner, Toast } from "@/components/ui";
+import { localDateIso } from "@/lib/dates";
 import { api, jsonInit, useToast } from "@/lib/hooks";
 import type { Item, Outfit } from "@/lib/types";
 import { imageUrl } from "@/lib/urls";
@@ -18,7 +19,7 @@ export default function OutfitsList({ outfits, items, wornCounts }: { outfits: O
   async function wear(o: Outfit) {
     setBusy("wear");
     try {
-      await api("/api/wears", jsonInit("POST", { outfit_id: o.id, item_ids: o.item_ids }));
+      await api("/api/wears", jsonInit("POST", { outfit_id: o.id, item_ids: o.item_ids, worn_on: localDateIso() }));
       showToast("Отмечено на сегодня");
       router.refresh();
     } catch (e) {

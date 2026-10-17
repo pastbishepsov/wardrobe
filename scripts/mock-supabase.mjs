@@ -51,8 +51,14 @@ function multipartFile(buf, ctype) {
   return { type: "application/octet-stream", buf };
 }
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+  "Access-Control-Allow-Headers": "authorization,apikey,content-type,x-upsert,cache-control,x-client-info,prefer,accept",
+};
+
 function json(res, status, body) {
-  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+  res.writeHead(status, { "Content-Type": "application/json", ...CORS });
   res.end(JSON.stringify(body));
 }
 
@@ -117,6 +123,23 @@ function respondRows(req, res, rows, status = 200) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === "OPTIONS") return json(res, 200, {});
+
+  // ---------- storage: signed upload urls (browser uploads straight to storage) ----------
+  if (url.pathname.startsWith("/storage/v1/object/upload/sign/")) {
+    const rest = url.pathname.slice("/storage/v1/object/upload/sign/".length);
+    const [bucket, ...pathParts] = rest.split("/");
+    const path = decodeURIComponent(pathParts.join("/"));
+    if (req.method === "POST") {
+      return json(res, 200, { url: `/object/upload/sign/${bucket}/${path}?token=mock-${randomUUID()}` });
+    }
+    if (req.method === "PUT") {
+      const buf = await readBody(req);
+      const ctype = String(req.headers["content-type"] || "application/octet-stream");
+      const file = ctype.startsWith("multipart/form-data") ? multipartFile(buf, ctype) : { type: ctype, buf };
+      files.set(path, file);
+      return json(res, 200, { Key: `${bucket}/${path}` });
+    }
+  }
 
   // ---------- storage ----------
   if (url.pathname.startsWith("/storage/v1/object/")) {

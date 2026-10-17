@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import TagForm, { type ItemMeta } from "@/components/TagForm";
 import { Spinner, Toast } from "@/components/ui";
+import { localDateIso } from "@/lib/dates";
 import { api, jsonInit, useToast } from "@/lib/hooks";
 import type { Item } from "@/lib/types";
 import { imageUrl } from "@/lib/urls";
@@ -63,7 +64,7 @@ export default function ItemEditor({ item, wornCount, lastWorn }: { item: Item; 
   async function wearToday() {
     setBusy("wear");
     try {
-      await api("/api/wears", jsonInit("POST", { item_ids: [item.id] }));
+      await api("/api/wears", jsonInit("POST", { item_ids: [item.id], worn_on: localDateIso() }));
       showToast("Отмечено на сегодня");
       router.refresh();
     } catch (e) {

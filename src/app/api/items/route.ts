@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { fail, newId, ok } from "@/lib/api";
+import { fail, ok } from "@/lib/api";
 import { createItem, listItems } from "@/lib/data";
-import { removeFromBucket, uploadToBucket } from "@/lib/supabase";
+import { removeFromBucket } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -30,25 +30,28 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
-  const form = await request.formData();
-  const image = form.get("image");
-  const original = form.get("original");
-  const metaRaw = form.get("meta");
-  if (!(image instanceof Blob) || typeof metaRaw !== "string") {
-    return fail(new Error("Нужны файл image и поле meta"), 400);
-  }
-  const parsed = MetaSchema.safeParse(JSON.parse(metaRaw));
-  if (!parsed.success) return fail(new Error("Неверные данные вещи: " + parsed.error.issues[0]?.message), 400);
-  const meta = parsed.data;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const id = newId();
+const CreateSchema = z.object({
+  // id and paths come from /api/upload-url; the files are already in Storage.
+  id: z.string().regex(UUID),
+  image_path: z.string(),
+  original_path: z.string().nullable().default(null),
+  meta: MetaSchema,
+});
+
+export async function POST(request: Request) {
+  const parsed = CreateSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) return fail(new Error("Неверные данные вещи: " + parsed.error.issues[0]?.message), 400);
+  const { id, meta } = parsed.data;
   const imagePath = `items/${id}.png`;
-  const originalPath = original instanceof Blob ? `originals/${id}.jpg` : null;
+  const originalPath = parsed.data.original_path ? `originals/${id}.jpg` : null;
+  if (parsed.data.image_path !== imagePath || (originalPath && parsed.data.original_path !== originalPath)) {
+    return fail(new Error("Пути файлов не совпадают с id"), 400);
+  }
   try {
-    await uploadToBucket(imagePath, image, "image/png");
-    if (original instanceof Blob && originalPath) await uploadToBucket(originalPath, original, "image/jpeg");
     const item = await createItem({
+      id,
       name: meta.name,
       category: meta.category,
       subcategory: meta.subcategory ?? null,

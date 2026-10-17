@@ -25,7 +25,9 @@ function LoginForm() {
       setError("Не тот пароль");
       return;
     }
-    router.replace(params.get("next") || "/wardrobe");
+    // Only follow same-site paths, never an absolute or protocol-relative URL.
+    const next = params.get("next");
+    router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : "/wardrobe");
   }
 
   return (

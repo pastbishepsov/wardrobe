@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { Sheet, Spinner, Toast } from "@/components/ui";
+import { localDateIso } from "@/lib/dates";
 import { useGestures } from "@/lib/gestures";
 import { api, jsonInit, useToast } from "@/lib/hooks";
 import { resizeImage } from "@/lib/image-client";
@@ -74,8 +75,8 @@ function PhotoUpload({ onDone, replacing }: { onDone: () => void; replacing?: bo
         </button>
       </div>
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
-      <input ref={cameraRef} type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => upload(e.target.files)} />
-      <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={(e) => upload(e.target.files)} />
+      <input ref={cameraRef} type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+      <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
     </div>
   );
 }
@@ -271,7 +272,7 @@ export default function TryOn({ profile, items, placements: initialPlacements }:
     if (!ids.length) return;
     setBusy("wear");
     try {
-      await api("/api/wears", jsonInit("POST", { item_ids: ids }));
+      await api("/api/wears", jsonInit("POST", { item_ids: ids, worn_on: localDateIso() }));
       showToast("Отмечено на сегодня");
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Ошибка");
@@ -530,7 +531,8 @@ function ZoneLayer({
       ? (dx, dy) => {
           const r = stage.current?.getBoundingClientRect();
           if (!r || !placement) return;
-          onAdjust({ dx: placement.dx + dx / (r.width * box.w), dy: placement.dy + dy / (r.height * box.h) });
+          // Same bounds as the server accepts (fractions of the zone), so "Запомнить" never fails.
+          onAdjust({ dx: clamp(placement.dx + dx / (r.width * box.w), -2, 2), dy: clamp(placement.dy + dy / (r.height * box.h), -2, 2) });
         }
       : undefined,
     onPinch: adjusting
@@ -596,7 +598,7 @@ function ZoneLayer({
           <button
             aria-label={locked ? "Открепить" : "Закрепить"}
             aria-pressed={locked}
-            className={`absolute -top-1 right-1 flex h-7 w-7 items-center justify-center rounded-full shadow ${locked ? "bg-accent text-accent-ink" : "bg-elev/90 text-ink-soft"}`}
+            className={`absolute -top-1 left-1 flex h-7 w-7 items-center justify-center rounded-full shadow ${locked ? "bg-accent text-accent-ink" : "bg-elev/90 text-ink-soft"}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={onToggleLock}
           >

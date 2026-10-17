@@ -39,6 +39,9 @@ export async function verifyToken(token: string | undefined | null): Promise<boo
   if (dot <= 0) return false;
   const issued = token.slice(0, dot);
   const sig = token.slice(dot + 1);
+  // Expire server-side too, so a leaked cookie does not work forever.
+  const issuedAt = parseInt(issued, 36);
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > COOKIE_MAX_AGE * 1000) return false;
   const expected = await hmac(issued);
   if (sig.length !== expected.length) return false;
   let diff = 0;

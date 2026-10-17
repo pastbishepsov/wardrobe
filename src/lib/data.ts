@@ -30,7 +30,7 @@ export async function getItem(id: string): Promise<Item | null> {
   return (data as Item | null) ?? null;
 }
 
-export async function createItem(input: Omit<Item, "id" | "created_at" | "archived">): Promise<Item> {
+export async function createItem(input: Omit<Item, "id" | "created_at" | "archived"> & { id?: string }): Promise<Item> {
   const { data, error } = await db().from("items").insert(input).select("*").single();
   if (error) fail("Не удалось сохранить вещь", error);
   return data as Item;
@@ -45,6 +45,41 @@ export async function updateItem(id: string, patch: Partial<Item>): Promise<Item
 export async function deleteItem(id: string): Promise<void> {
   const { error } = await db().from("items").delete().eq("id", id);
   if (error) fail("Не удалось удалить вещь", error);
+}
+
+/**
+ * Strip a deleted item out of outfits and trip plans so counters and layouts stay consistent.
+ * Wear history keeps the id on purpose (it is history); readers tolerate unknown ids.
+ */
+export async function removeItemReferences(id: string): Promise<void> {
+  const outfits = await listOutfits();
+  for (const o of outfits) {
+    if (!o.item_ids.includes(id)) continue;
+    const item_ids = o.item_ids.filter((x) => x !== id);
+    if (!item_ids.length) {
+      await deleteOutfit(o.id);
+      continue;
+    }
+    const layout: Outfit["layout"] = { ...o.layout };
+    if (layout.items) layout.items = layout.items.filter((l) => l.item_id !== id);
+    if (layout.tryon) {
+      const t = { ...layout.tryon };
+      for (const k of ["top", "bottom", "shoes"] as const) if (t[k] === id) t[k] = null;
+      layout.tryon = t;
+    }
+    await updateOutfit(o.id, { item_ids, layout });
+  }
+
+  const trips = await listTrips();
+  for (const t of trips) {
+    const inPlan = t.plan && (t.plan.items.includes(id) || t.plan.days.some((d) => d.item_ids.includes(id)));
+    const inPacked = t.packed.includes(id);
+    if (!inPlan && !inPacked) continue;
+    const plan = t.plan
+      ? { ...t.plan, items: t.plan.items.filter((x) => x !== id), days: t.plan.days.map((d) => ({ ...d, item_ids: d.item_ids.filter((x) => x !== id) })) }
+      : null;
+    await updateTrip(t.id, { plan, packed: t.packed.filter((x) => x !== id) });
+  }
 }
 
 // ---------- outfits ----------

@@ -182,5 +182,16 @@ textarea {
   }
 }
 .fade-up {
-  animation: fade-up 0.25s ease-out both;
+  /* `backwards`, not `both`: a lingering transform would turn fixed children (toasts) into positioned ones */
+  animation: fade-up 0.25s ease-out backwards;
+}
+
+/* No 300 ms tap delay and no double-tap zoom on controls (iOS ignores maximum-scale for user zoom). */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea {
+  touch-action: manipulation;
 }

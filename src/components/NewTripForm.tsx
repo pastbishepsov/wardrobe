@@ -3,20 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Segmented, Sheet, Spinner } from "@/components/ui";
+import { addDays, localDateIso } from "@/lib/dates";
 import { api, jsonInit } from "@/lib/hooks";
 import type { Trip } from "@/lib/types";
 
 const ACTIVITIES = ["прогулки", "музеи", "рестораны", "деловые встречи", "пляж", "горы", "спорт", "вечеринки", "свадьба", "с детьми"];
 
-function addDays(iso: string, n: number) {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
 export default function NewTripForm({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateIso();
   const [city, setCity] = useState("");
   const [start, setStart] = useState(addDays(today, 7));
   const [end, setEnd] = useState(addDays(today, 10));
